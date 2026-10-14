@@ -1,0 +1,19 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+echo 5 > /proc/sys/kernel/printk
+mkdir -p /run /tmp /var/tmp /work /dev/pts
+mount -t tmpfs -o size=16M,mode=0755 tmpfs /run
+mount -t tmpfs -o size=64M,mode=1777 tmpfs /tmp
+mount -t tmpfs -o size=32M,mode=1777 tmpfs /var/tmp
+mount -t tmpfs -o size=384M,mode=0755 tmpfs /work
+mount -t devpts devpts /dev/pts
+hostname xr1710g-sdr-ram
+ip link set lo up
+status=XR1710G_RAM_READY
+/usr/sbin/verify-storage || status=XR1710G_RAM_DEGRADED
+/usr/sbin/w1700k-network || status=XR1710G_RAM_DEGRADED
+insmod /lib/modules/w1700k_sdr.ko || status=XR1710G_RAM_DEGRADED
+/etc/init.d/S50dropbear start || status=XR1710G_RAM_DEGRADED
+echo "$status"

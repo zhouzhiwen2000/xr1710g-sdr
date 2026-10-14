@@ -1,0 +1,13 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+[ ! -e /sys/class/mtd ] || [ -z "$(ls -A /sys/class/mtd)" ]
+[ ! -e /sys/class/ubi ] || [ -z "$(ls -A /sys/class/ubi)" ]
+[ ! -e /dev/mtd0 ]
+[ ! -e /sys/kernel/sdr_bmt ]
+grep -q ' / overlay ' /proc/mounts
+grep -q ' /.lower squashfs ro' /proc/mounts
+for path in /.ram /run /tmp /var/tmp /work; do
+	awk -v path="$path" '$2 == path && $3 == "tmpfs" { found=1 } END { exit !found }' /proc/mounts
+done
+echo XR1710G_RAM_STORAGE_OK

@@ -1,4 +1,26 @@
-# W1700K SDR
+# XR1710G SDR
+
+XR1710G RAM boot port of [h0m3us3r/w1700k-sdr](https://github.com/h0m3us3r/w1700k-sdr),
+based on upstream commit `0b0413e4309f0c083702fa4eb2d1c2bca4532163`.
+The upstream history and licenses are retained.
+
+Start with the [XR1710G build and validation guide](platform/xr1710g/README.md).
+The profile boots through the existing chainloaded U-Boot, with NAND drivers
+disabled, and preserves the original Secure Boot bootloader and unit calibration.
+Use this unit's own EEPROM and keep backups, credentials and captures outside
+the source tree.
+
+Hardware validation completed on an AN7581GT / 2 GiB / MT7996 XR1710G:
+finite 40 Msps captures on 2.4, 5 and 6 GHz, each lasting 0.25 seconds, with no
+producer overruns or malformed/lapped buffers. Files transferred over SSH
+passed SHA256 verification on a 2.5 GbE link with MTU 1500. Continuous UDP
+streaming, higher sample rates and calibrated RF sensitivity remain unverified.
+This profile produces a RAM boot FIT; it is not a NAND installation image.
+
+The W1700K description and installation instructions below are retained from
+upstream; XR1710G users should follow the board-specific guide above.
+
+# W1700K SDR (upstream)
 
 Turns a Gemtek W1700K Wi-Fi 7 router into a wideband software-defined receiver.
 The router's MediaTek MT7996 radio captures raw 14-bit IQ at up to 320 Msps,

@@ -63,11 +63,18 @@ check:
 	$(PYTHON) tools/check_hw_names.py
 	$(PYTHON) -m unittest discover -s tests
 
+# XR1710G trial image: existing chainloader, RAM root, no NAND driver.
+# UNIT_DIR holds the unit's test SSH keys; AUTHORIZED_KEY is a public key.
+.PHONY: xr1710g-ram
+xr1710g-ram: toolchain
+	$(PYTHON) platform/xr1710g/build.py all --unit-dir "$(UNIT_DIR)" --authorized-key "$(AUTHORIZED_KEY)"
+
 # Remove build outputs but keep downloads and prepared sources.
 clean:
 	rm -rf platform/build/buildroot platform/build/linux platform/build/loader \
 		platform/build/dumper platform/build/restorer platform/build/mkimage \
 		platform/build/bootstrap platform/build/images platform/build/rootfs-overlay \
+		platform/build/xr1710g \
 		platform/build/logs \
 		kernel/w1700k_sdr/build
 

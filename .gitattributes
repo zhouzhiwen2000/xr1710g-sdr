@@ -1,0 +1,4 @@
+# Keep the RAM profile usable when checked out on Windows and built on Linux.
+Makefile text eol=lf
+platform/xr1710g/** text=auto eol=lf
+tests/test_xr1710g_ram.py text eol=lf

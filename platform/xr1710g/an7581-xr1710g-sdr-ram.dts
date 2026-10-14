@@ -1,0 +1,211 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/phy/phy.h>
+#include "an7581.dtsi"
+
+/delete-node/ &sound;
+/delete-node/ &afe;
+/* A fixed clock is not an MMIO child of the SoC bus; it moves to the root below. */
+/delete-node/ &i2cclock;
+
+/* XR1710G wiring cross-checked against its upstream board support.
+ * RAM trial: flash controllers are disabled; calibration comes from the host.
+ */
+/ {
+	model = "Gemtek XR1710G SDR RAM trial";
+	compatible = "gemtek,xr1710g", "gemtek,xr1710g-sdr", "airoha,an7581", "airoha,en7581";
+
+	aliases {
+		serial0 = &uart1;
+		ethernet0 = &gdm1;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 earlycon panic=5 ro rdinit=/init";
+		stdout-path = "serial0:115200n8";
+	};
+
+	i2cclock: clock-i2c {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <20000000>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x80000000>;
+	};
+
+	/* The existing shim supplies detected DRAM and initrd addresses. */
+};
+
+&en7581_pinctrl {
+	gpio-ranges = <&en7581_pinctrl 0 13 47>;
+
+	mdio_pins: mdio-pins {
+		mux {
+			function = "mdio";
+			groups = "mdio";
+		};
+		conf {
+			pins = "gpio2";
+			output-high;
+		};
+	};
+
+	pcie0_rst_pins: pcie0-rst-pins {
+		conf {
+			pins = "pcie_reset0";
+			drive-open-drain = <1>;
+		};
+	};
+
+	pcie2_rst_pins: pcie2-rst-pins {
+		conf {
+			pins = "pcie_reset2";
+			drive-open-drain = <1>;
+		};
+	};
+};
+
+&pcie0 {
+	status = "okay";
+	reg = <0x0 0x1fc00000 0x0 0x1670>,
+	      <0x0 0x1fc20000 0x0 0x1670>;
+	reg-names = "pcie-mac", "sec-pcie-mac";
+	resets = <&scuclk EN7581_PCIE0_RST>,
+		 <&scuclk EN7581_PCIE1_RST>,
+		 <&scuclk EN7581_PCIC_PERSTOUT0_RST>,
+		 <&scuclk EN7581_PCIC_PERSTOUT1_RST>;
+	reset-names = "phy-lane0", "phy-lane1", "perstout", "sec-perstout";
+	num-lanes = <2>;
+	airoha,scu = <&scuclk>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie0_rst_pins>;
+	/* The MT7996 is found by PCI enumeration; its calibration is supplied
+	 * by the host, not read from a factory partition here. */
+};
+
+&pcie1 {
+	status = "disabled";
+};
+
+&pcie2 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie2_rst_pins>;
+};
+
+&i2c0 {
+	status = "okay";
+	hwmon@2e {
+		compatible = "nuvoton,nct7802";
+		reg = <0x2e>;
+	};
+};
+
+&npu {
+	status = "disabled";
+};
+
+&eth {
+	status = "okay";
+	/delete-property/ airoha,npu;
+};
+
+&gdm1 {
+	status = "okay";
+	/* With no MAC supplied, the driver generates a local unicast address. */
+};
+
+&switch {
+	status = "okay";
+	/delete-property/ #address-cells;
+	/delete-property/ #size-cells;
+	pinctrl-names = "default";
+	pinctrl-0 = <&mdio_pins>;
+};
+
+&gsw_phy1 {
+	status = "okay";
+	interrupts = <1>;
+};
+
+&gsw_port1 {
+	status = "okay";
+	label = "lan3";
+};
+
+&gsw_phy2 {
+	status = "okay";
+	interrupts = <2>;
+};
+
+&gsw_port2 {
+	status = "okay";
+	label = "lan4";
+};
+
+/* The ATF, NPU firmware and QDMA reservations of the SoC include stay; the
+ * Wi-Fi-only NPU pools are left out. Auxiliary UARTs stay disabled.
+ */
+&snfi {
+	status = "disabled";
+};
+
+&spi_nand {
+	status = "disabled";
+};
+
+/* The two 10 GbE ports, wired as in OpenWrt: RTL8261N PHYs (W1700K) or
+ * RTL8261CE PHYs (W1700K2) on the switch MDIO bus over USXGMII, polarity
+ * inverted both ways on both. GDM2 is OpenWrt's wan (PHY 8), GDM4 its lan2
+ * (PHY 5). The generic C45 compatible lets the kernel pick the driver by the
+ * PHY's ID; each needs its firmware file (rtl8261n.bin, rtl_nic/rtl8261c.bin),
+ * both of which the kernel has built in.
+ */
+&pon_pcs {
+	status = "okay";
+};
+
+&eth_pcs {
+	status = "okay";
+};
+
+&gdm2 {
+	status = "okay";
+	managed = "in-band-status";
+	phy-handle = <&phy8>;
+	phy-mode = "usxgmii";
+};
+
+&gdm4 {
+	status = "okay";
+	managed = "in-band-status";
+	phy-handle = <&phy5>;
+	phy-mode = "usxgmii";
+};
+
+&mdio {
+	phy5: ethernet-phy@5 {
+		compatible = "ethernet-phy-ieee802.3-c45";
+		reg = <5>;
+		reset-gpios = <&en7581_pinctrl 46 GPIO_ACTIVE_LOW>;
+		reset-assert-us = <200000>;
+		reset-deassert-us = <200000>;
+		tx-polarity = <PHY_POL_INVERT>;
+		rx-polarity = <PHY_POL_INVERT>;
+	};
+
+	phy8: ethernet-phy@8 {
+		compatible = "ethernet-phy-ieee802.3-c45";
+		reg = <8>;
+		reset-gpios = <&en7581_pinctrl 31 GPIO_ACTIVE_LOW>;
+		reset-assert-us = <200000>;
+		reset-deassert-us = <200000>;
+		tx-polarity = <PHY_POL_INVERT>;
+		rx-polarity = <PHY_POL_INVERT>;
+	};
+};

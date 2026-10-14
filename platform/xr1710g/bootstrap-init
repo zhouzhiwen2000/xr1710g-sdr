@@ -1,0 +1,14 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+bb=/bin/busybox
+$bb mount -t devtmpfs devtmpfs /dev
+$bb mount -t squashfs -o loop,ro,noatime /rootfs.squashfs /lower
+$bb mount -t tmpfs -o size=64M,mode=0755 tmpfs /ram
+$bb mkdir -p /ram/upper /ram/work
+$bb mount -t overlay -o lowerdir=/lower,upperdir=/ram/upper,workdir=/ram/work overlay /newroot
+$bb mkdir -p /newroot/.lower /newroot/.ram /newroot/proc /newroot/sys /newroot/dev
+$bb mount --move /lower /newroot/.lower
+$bb mount --move /ram /newroot/.ram
+$bb mount --move /dev /newroot/dev
+exec $bb switch_root /newroot /sbin/init
