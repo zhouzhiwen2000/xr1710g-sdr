@@ -1,6 +1,6 @@
 # XR1710G SDR
 
-XR1710G RAM boot port of [h0m3us3r/w1700k-sdr](https://github.com/h0m3us3r/w1700k-sdr),
+XR1710G port of [h0m3us3r/w1700k-sdr](https://github.com/h0m3us3r/w1700k-sdr),
 based on upstream commit `0b0413e4309f0c083702fa4eb2d1c2bca4532163`.
 The upstream history and licenses are retained.
 
@@ -15,7 +15,12 @@ finite 40 Msps captures on 2.4, 5 and 6 GHz, each lasting 0.25 seconds, with no
 producer overruns or malformed/lapped buffers. Files transferred over SSH
 passed SHA256 verification on a 2.5 GbE link with MTU 1500. Continuous UDP
 streaming, higher sample rates and calibrated RF sensitivity remain unverified.
-This profile produces a RAM boot FIT; it is not a NAND installation image.
+The existing shim can load the receiver from its NAND `fit` volume; automatic
+warm boot and finite captures have passed. The running kernel retains the RAM
+root and disabled NAND drivers. A periodic spectrum viewer over SSH and
+[portable serial, TFTP and relay tools](platform/xr1710g/tools/README.md) are included.
+Direct continuous IQ, physical cold boot and Reset-button recovery tests remain
+pending. Follow the XR1710G guide for the FIT and shim environment requirements.
 
 The W1700K description and installation instructions below are retained from
 upstream; XR1710G users should follow the board-specific guide above.

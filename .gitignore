@@ -14,3 +14,18 @@ nand-raw.bin
 nand-raw.json
 eeprom.bin
 /captures/
+
+# Private XR1710G runtime artifacts and per-unit material.
+*.itb
+*.raw
+*.meta
+*.log
+*.zip
+*.tar.gz
+*eeprom*.bin
+*dsd*.bin
+id_ed25519*
+id_rsa*
+dropbear_*_host_key
+/private-unit/
+/runtime/

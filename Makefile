@@ -69,6 +69,11 @@ check:
 xr1710g-ram: toolchain
 	$(PYTHON) platform/xr1710g/build.py all --unit-dir "$(UNIT_DIR)" --authorized-key "$(AUTHORIZED_KEY)"
 
+# Store the same RAM receiver in the existing shim's UBI fit volume.
+.PHONY: xr1710g-nand
+xr1710g-nand: xr1710g-ram
+	$(PYTHON) platform/xr1710g/nand.py
+
 # Remove build outputs but keep downloads and prepared sources.
 clean:
 	rm -rf platform/build/buildroot platform/build/linux platform/build/loader \

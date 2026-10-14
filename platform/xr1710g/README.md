@@ -1,8 +1,8 @@
-# XR1710G RAM trial
+# XR1710G receiver
 
 This profile boots the SDR receiver on an XR1710G through its existing
 chainloaded U-Boot. It does not build or install another bootloader, expose
-NAND, create UBI volumes, or run the W1700K installer. The original Secure Boot
+NAND to Linux, or run the W1700K installer. The original Secure Boot
 bootloader and the unit's DSD/calibration remain outside the test kernel.
 
 Board wiring is based on the XR1710G device tree at
@@ -26,8 +26,12 @@ the SHA256 of the FIT and each payload. This is a RAM boot image, not an image
 for the recovery page's flash button. The builder reuses upstream build output
 directories, so do not run upstream Linux/rootfs builds concurrently.
 
-The test management address is 192.168.255.1/24 on eth2 (GDM4, LAN2). For GDM2/eth1,
-move the addresses through the serial console. The default MTU is 1500.
+The management address is 192.168.255.1/24 on eth2 (GDM4, LAN2), MTU 1500.
+New builds configure the other high-speed port, eth1 (GDM2/PHY8), for IQ export
+at 10.77.0.1/24 with MTU 9216. The host needs 10.77.0.10/24 and jumbo frames on
+its directly connected interface. Identify the actual 10G NIC before changing
+host settings. The initially tested and installed image used eth2 for both paths
+at MTU 1500; the separate-port configuration still needs a hardware boot test.
 Gigabit links should use finite local captures followed by file transfer.
 Continuous 40 Msps raw IQ requires 1.28 Gbit/s before framing overhead and
 requires a 2.5G or faster link and an MTU capable of the upstream 8 KiB datagrams.
@@ -69,8 +73,70 @@ from each band were retrieved over SSH and verified against the router's
 SHA256. Original bootloader, DSD and installed shim CRCs matched the saved
 values after testing.
 
-The software check suite ran 313 tests with 13 skips and no failures, including
-five XR1710G storage/device-tree guard tests. The skipped tests require upstream
-images that were not built for this RAM profile. Continuous UDP transport,
+The initial software check suite ran 313 tests with 13 skips and no failures,
+including five XR1710G storage/device-tree guard tests. Additional tests cover
+NAND FIT packaging, raw IQ orientation and viewer state after a reboot. The
+skipped tests require upstream images that were not built for this profile. Continuous UDP transport,
 long-duration captures, higher sample rates and calibrated RF measurements
 have not been validated on XR1710G.
+
+## NAND-loaded receiver
+
+Build the RAM receiver first, then package it for the installed XR1710G shim:
+
+```sh
+python3 platform/xr1710g/nand.py
+# Or build both with private unit inputs:
+make xr1710g-nand UNIT_DIR=/path/to/private-unit AUTHORIZED_KEY=/path/to/test-key.pub
+```
+
+The output is `platform/build/xr1710g/xr1710g-sdr-nand.itb` plus a manifest.
+The packager retains the guarded kernel, DTB and RAM root, verifies their hashes,
+and selects `config-1`, as the existing shim expects. The shim reads it from
+`ubi:fit` and must retain these boot arguments in its own UBI environment:
+
+```text
+console=ttyS0,115200 earlycon panic=5 ro rdinit=/init
+```
+
+The original bootloader, original environment, DSD and installed chainloader
+are preserved. Installation adds a static `fit` volume and the shim's dynamic
+`ubootenv`/`ubootenv2` volumes to the existing UBI layout. Use the serial console
+to inspect the layout and update only these volumes. Read the FIT back and
+compare all bytes before saving the shim environment or restarting. Do not run
+the upstream W1700K installer: its loader and UBI boundaries differ.
+
+The shim's recovery upload rebuilds UBI and resets the environment, so this FIT
+must not be uploaded with that OpenWrt flash flow. It is not a sysupgrade image.
+NAND stores the boot image; root changes and captures remain in RAM and are lost
+on reboot. Keep any recordings and settings on the host.
+
+On the tested unit, FIT readback matched all 12,209,644 bytes, all three payload
+hashes passed, and automatic warm boot loaded the SDR receiver from NAND.
+Three-band 40 Msps finite captures passed again. Original bootloader, original
+environment, DSD, shim and factory CRCs matched before and after installation.
+Physical cold boot and Reset-button entry have not been tested yet.
+
+## Periodic spectrum viewer
+
+This viewer runs on the Linux host with NumPy. It captures briefly, stops the
+producer, transfers 2 MiB over SSH and shows a spectrum and a short waterfall.
+It supports gigabit management links without a continuous IQ connection:
+
+```sh
+python3 platform/xr1710g/preview.py --config /path/to/unit-config.json \
+  --listen 127.0.0.1:8074
+```
+
+For another computer to open the page, bind to the Linux host's LAN address.
+Choose a band and LO, then capture once or enable periodic refresh. The backend
+checks the storage guard, validates capture results and transferred SHA256,
+and discards stale controller sessions after a receiver reboot. Power is
+uncalibrated dBFS/Hz. A real 5 GHz capture at 40 Msps passed backend validation;
+the browser flow on the final NAND image still needs testing. Stop continuous
+streaming before using this viewer.
+
+The original continuous spectrum interface remains in `host/spectrum/`; follow
+its README after validating the direct jumbo-frame IQ path. The portable
+[host tools](tools/README.md) cover serial control, read-only TFTP and optional
+SSH TCP forwarding. None contains credentials or per-device data.

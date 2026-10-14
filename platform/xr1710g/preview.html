@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XR1710G SDR</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101722;color:#e5edf8}
+*{box-sizing:border-box}body{margin:0;padding:22px;max-width:1280px;margin-inline:auto}
+header{display:flex;justify-content:space-between;gap:20px;align-items:center;flex-wrap:wrap}
+h1{font-size:24px;margin:0}small,.muted{color:#a9b8cd}header small{display:block;margin-top:7px}
+form{display:flex;align-items:end;gap:14px;flex-wrap:wrap;margin:26px 0 18px}
+label{display:flex;flex-direction:column;gap:7px;font-size:14px}
+select,input,button{font:inherit;color:inherit;background:#1c283b;border:1px solid #42536b;border-radius:7px;padding:10px 12px}
+input[type=number]{width:160px}button{background:#2274bd;border-color:#328fdc;cursor:pointer}button:disabled{opacity:.5;cursor:wait}
+.refresh{flex-direction:row;align-items:center;padding-bottom:9px}.refresh input{margin:0}
+#status{min-height:26px;color:#a9b8cd;margin:10px 0 6px}#status.error{color:#ffab9f}
+.chart{margin:10px 0 22px}canvas{display:block;width:100%;height:260px;background:#101722}
+.caption{margin:8px 0;font-size:13px;color:#a9b8cd}#hover{min-height:20px;font-size:13px;color:#b9dfff}
+footer{font-size:13px;color:#a9b8cd;border-top:1px solid #2b3a50;padding-top:14px;line-height:1.7}
+@media(max-width:480px){body{padding:14px}canvas{height:235px}form{gap:10px}header{gap:9px}}
+</style>
+<header><div><h1>XR1710G SDR</h1><small>三频段接收 · 40 Msps · 短段采样 / SSH 回传</small></div><span id="timestamp" class="muted">等待采样</span></header>
+<form id="controls">
+  <label>频段<select id="band"><option value="0">2.4 GHz</option><option value="1" selected>5 GHz</option><option value="2">6 GHz</option></select></label>
+  <label>中心频率 MHz<input id="lo" type="number" value="5250" step="0.001" required></label>
+  <button id="capture" type="submit">采样一次</button>
+  <label class="refresh"><input id="refresh" type="checkbox">连续刷新</label>
+</form>
+<div id="status" role="status" aria-live="polite">连接就绪后点击采样；首次操作会初始化射频。</div>
+<div class="chart"><canvas id="spectrum" role="img" aria-label="最近一次采样的平均频谱"></canvas><div id="hover">频率 MHz · 功率密度 dBFS/Hz</div></div>
+<div class="chart"><canvas id="waterfall" role="img" aria-label="最近一次短段采样的瀑布图"></canvas><div id="record" class="caption">瀑布图时间轴对应单次记录，每次刷新重新采样。</div></div>
+<footer>本界面通过 SSH 回传短段 IQ，适用于千兆和 2.5G 控制链路。每次采样后射频数据流停止。
+功率以 dBFS/Hz 表示，尚未做 dBm 标定；中心频点的尖峰可能包含直流分量。</footer>
+<script>
+const byId=id=>document.getElementById(id);
+let latest=null,busy=false,timer=null;
+const centers=[2442,5250,6105];
+byId('band').addEventListener('change',()=>{byId('lo').value=centers[Number(byId('band').value)];});
+function surface(id){
+ const c=byId(id),box=c.getBoundingClientRect(),ratio=devicePixelRatio||1;
+ c.width=Math.round(box.width*ratio);c.height=Math.round(box.height*ratio);
+ const ctx=c.getContext('2d');ctx.scale(ratio,ratio);ctx.font='12px system-ui';
+ return {ctx,w:box.width,h:box.height};
+}
+function axes(s,ymin,ymax,ylabel){
+ const {ctx,w,h}=s,left=76,right=w-18,top=24,bottom=h-46;
+ const lo=latest.center_mhz-20,hi=latest.center_mhz+20;
+ const x=f=>left+(f-lo)/(hi-lo)*(right-left),y=p=>bottom-(p-ymin)/(ymax-ymin)*(bottom-top);
+ ctx.strokeStyle='#2c3e55';ctx.strokeRect(left,top,right-left,bottom-top);
+ ctx.fillStyle='#b6c5d9';ctx.textAlign='right';
+ for(let n=0;n<=4;n++){const v=ymin+(ymax-ymin)*n/4,py=y(v);ctx.fillText(v.toFixed(0),left-8,py+4);ctx.beginPath();ctx.moveTo(left,py);ctx.lineTo(right,py);ctx.stroke();}
+ const ticks=w<460?2:4;ctx.textAlign='center';
+ for(let n=0;n<=ticks;n++){const f=lo+40*n/ticks;ctx.fillText(f.toFixed(0),x(f),bottom+19);}
+ ctx.fillText('频率 (MHz)',(left+right)/2,h-5);
+ ctx.save();ctx.translate(15,(top+bottom)/2);ctx.rotate(-Math.PI/2);ctx.fillText(ylabel,0,0);ctx.restore();
+ return {left,right,top,bottom,x,y};
+}
+function draw(){
+ if(!latest)return;
+ const s=surface('spectrum'),p=latest.power;
+ const min=Math.floor(Math.min(...p)/10)*10,max=Math.ceil(Math.max(...p)/10)*10+5;
+ const a=axes(s,min,max,'功率密度 (dBFS/Hz)');
+ s.ctx.strokeStyle='#54b6ff';s.ctx.lineWidth=1.6;s.ctx.beginPath();
+ latest.frequency_mhz.forEach((f,i)=>{const x=a.x(f),y=a.y(p[i]);i?s.ctx.lineTo(x,y):s.ctx.moveTo(x,y);});s.ctx.stroke();
+ const wf=surface('waterfall'),wa=axes(wf,latest.record_ms,0,'记录时间 (ms)');
+ const values=latest.waterfall.flat(),low=Math.min(...values),high=Math.max(...values);
+ latest.waterfall.forEach((row,r)=>row.forEach((v,c)=>{
+   const t=Math.max(0,Math.min(1,(v-low)/Math.max(1,high-low)));
+   const red=Math.round(255*Math.max(0,(t-.6)/.4)),green=Math.round(220*Math.min(1,t/.6)),blue=Math.round(55+170*(1-t));
+   wf.ctx.fillStyle=`rgb(${red},${green},${blue})`;
+   wf.ctx.fillRect(wa.left+c*(wa.right-wa.left)/row.length,wa.top+r*(wa.bottom-wa.top)/latest.waterfall.length,(wa.right-wa.left)/row.length+.2,(wa.bottom-wa.top)/latest.waterfall.length+.2);
+ }));
+ wf.ctx.fillStyle='#b6c5d9';wf.ctx.textAlign='right';wf.ctx.fillText(`${low.toFixed(0)} → ${high.toFixed(0)} dBFS/Hz`,wf.w-18,14);
+}
+async function capture(){
+ if(busy)return;busy=true;clearTimeout(timer);
+ byId('capture').disabled=true;byId('band').disabled=true;byId('lo').disabled=true;
+ byId('status').className='';byId('status').textContent='正在初始化 / 采样 / 回传，请稍候…';
+ try{
+   const reply=await fetch('/api/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({band:Number(byId('band').value),lo_mhz:Number(byId('lo').value)})});
+   const result=await reply.json();if(!reply.ok)throw new Error(result.error||'采样失败');latest=result;draw();
+   byId('timestamp').textContent=new Date(result.captured_at*1000).toLocaleTimeString();
+   byId('status').textContent=`${result.center_mhz.toFixed(3)} MHz · 40 Msps · SHA256 已核验 · 异常块 ${result.capture.reader.malformed} / 覆盖块 ${result.capture.reader.lapped} · 用时 ${result.elapsed_seconds.toFixed(2)} s`;
+   byId('record').textContent=`最近一次记录 ${result.record_ms.toFixed(2)} ms · 射频采样 ${result.capture_seconds*1000} ms · Hann 窗 / FFT ${result.fft} · 每次刷新重新采样`;
+ }catch(error){byId('status').className='error';byId('status').textContent=error.message;byId('refresh').checked=false;}
+ finally{busy=false;byId('capture').disabled=false;byId('band').disabled=false;byId('lo').disabled=false;if(byId('refresh').checked)timer=setTimeout(capture,1500);}
+}
+byId('controls').addEventListener('submit',event=>{event.preventDefault();capture();});
+byId('refresh').addEventListener('change',()=>{clearTimeout(timer);if(byId('refresh').checked)capture();});
+byId('spectrum').addEventListener('pointermove',event=>{
+ if(!latest)return;const box=event.currentTarget.getBoundingClientRect(),f=latest.center_mhz-20+(event.clientX-box.left-76)/(box.width-94)*40;
+ if(f<latest.center_mhz-20||f>latest.center_mhz+20)return;
+ const i=Math.max(0,Math.min(latest.power.length-1,Math.round((f-latest.frequency_mhz[0])/(latest.frequency_mhz[1]-latest.frequency_mhz[0]))));
+ byId('hover').textContent=`${latest.frequency_mhz[i].toFixed(3)} MHz · ${latest.power[i].toFixed(1)} dBFS/Hz`;
+});
+new ResizeObserver(draw).observe(byId('spectrum'));
+</script>
+</html>
