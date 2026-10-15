@@ -83,6 +83,10 @@ its band) and deliver no data at that class; band 2 tunes 4.7–7.6 GHz, so 640/
 covers band 1's range too. Band 0 above 40 MHz is our set-up, MediaTek's 2.4 GHz tables ending there. The
 LO and the analog filter are set apart from the rate, on every band.
 
+An [additional-rate probe](sample-rates.md) tested capture-rate and RXFE
+controls for 50 / 100 Msps output. Those rates were not obtained on the tested
+path; matching them would currently require host resampling.
+
 Throughput. 320 Msps × 32 bits is 1.28 GB/s from the radio. One 10 GbE link
 carries about 1.24 GB/s of payload, so half of the chunks are packed on the
 MT7996 (8 KiB → 7 KiB), which puts the link at about 97 %. The 1 GiB ring

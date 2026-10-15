@@ -1,0 +1,46 @@
+--- a/host/lib/usrp/x300/x300_device_args.hpp
++++ b/host/lib/usrp/x300/x300_device_args.hpp
+@@ -212,8 +212,9 @@
+         } else {
+             // This default clock rate works best for most daughterboards (i.e. DBSRX2,
+             // WBX, SBX, CBX, and TwinRX).
+-            if (_master_clock_rate.get() >= MIN_TICK_RATE
+-                && _master_clock_rate.get() <= MAX_TICK_RATE) {
++            if (_master_clock_rate.get() == 160e6
++                || (_master_clock_rate.get() >= MIN_TICK_RATE
++                    && _master_clock_rate.get() <= MAX_TICK_RATE)) {
+                 _dboard_clock_rate.set(_master_clock_rate.get() / 2);
+             } else {
+                 throw uhd::value_error("Can't infer daughterboard clock rate. Specify "
+@@ -284,5 +285,8 @@
+         // Sanity check params
+-        _enforce_range(_master_clock_rate, MIN_TICK_RATE, MAX_TICK_RATE);
++        // Experimental XR1710G interoperability: admit exactly 160 MHz.
++        if (_master_clock_rate.get() != 160e6) {
++            _enforce_range(_master_clock_rate, MIN_TICK_RATE, MAX_TICK_RATE);
++        }
+         _enforce_discrete(_system_ref_rate, EXTERNAL_FREQ_OPTIONS);
+         _enforce_discrete(_clock_source, CLOCK_SOURCE_OPTIONS);
+         _enforce_discrete(_time_source, TIME_SOURCE_OPTIONS);
+--- a/host/lib/usrp/x300/x300_clock_ctrl.cpp
++++ b/host/lib/usrp/x300/x300_clock_ctrl.cpp
+@@ -618,12 +618,13 @@
+             } else if (math::frequencies_are_equal(_master_clock_rate, 120e6)) {
+                 /* 10MHz reference, 120 MHz master clock rate, Zero Delay */
+                 clocking_mode = m10M_120M_ZDEL;
+-            } else if (fp_compare_delta<double>(
+-                           _master_clock_rate, math::FREQ_COMPARISON_DELTA_HZ)
+-                           >= uhd::usrp::x300::MIN_TICK_RATE
+-                       && fp_compare_delta<double>(
+-                              _master_clock_rate, math::FREQ_COMPARISON_DELTA_HZ)
+-                              <= uhd::usrp::x300::MAX_TICK_RATE) {
++            } else if (math::frequencies_are_equal(_master_clock_rate, 160e6)
++                       || (fp_compare_delta<double>(
++                               _master_clock_rate, math::FREQ_COMPARISON_DELTA_HZ)
++                               >= uhd::usrp::x300::MIN_TICK_RATE
++                           && fp_compare_delta<double>(
++                                  _master_clock_rate, math::FREQ_COMPARISON_DELTA_HZ)
++                                  <= uhd::usrp::x300::MAX_TICK_RATE)) {
+                 /* 10MHz reference, attempt to automatically configure PLL
+                  * for arbitrary master clock rate, Zero Delay */
+                 UHD_LOGGER_WARNING("X300") << "Using automatic master clock PLL config. "

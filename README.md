@@ -13,14 +13,22 @@ the source tree.
 Hardware validation completed on an AN7581GT / 2 GiB / MT7996 XR1710G:
 finite 40 Msps captures on 2.4, 5 and 6 GHz, each lasting 0.25 seconds, with no
 producer overruns or malformed/lapped buffers. Files transferred over SSH
-passed SHA256 verification on a 2.5 GbE link with MTU 1500. Continuous UDP
-streaming, higher sample rates and calibrated RF sensitivity remain unverified.
+passed SHA256 verification on a 2.5 GbE link with MTU 1500. Calibrated RF
+sensitivity remains unmeasured; subsequent continuous-stream testing is below.
 The existing shim can load the receiver from its NAND `fit` volume; automatic
 warm boot and finite captures have passed. The running kernel retains the RAM
 root and disabled NAND drivers. A periodic spectrum viewer over SSH and
 [portable serial, TFTP and relay tools](platform/xr1710g/tools/README.md) are included.
-Direct continuous IQ, physical cold boot and Reset-button recovery tests remain
+Physical cold boot and Reset-button recovery tests remain
 pending. Follow the XR1710G guide for the FIT and shim environment requirements.
+
+[X310 over-the-air testing](docs/x310-ota.md) subsequently validated a common
+40 Msps rate with the OpenISAC CPU UE, hardware PLL carrier correction, and
+reacquisition with uplink disabled. The selected test frequency is 2.350 GHz.
+Byte-checked UDP payloads pass over the link, but losses and some corrupt
+payloads remain; the report includes transmit-host realtime setup and limits.
+An [experimental X310 160 MHz clock build](docs/x310-160mhz.md) subsequently
+passed 80 Msps OTA reception and raised the live video to 1080p at 30 Mb/s.
 
 The W1700K description and installation instructions below are retained from
 upstream; XR1710G users should follow the board-specific guide above.
@@ -87,7 +95,7 @@ between them, in 1.22 kHz bins.*
 | [`host/recv/`](host/recv/README.md) | `sdr-recv`, the stream recorder |
 | [`init/`](init/README.md) | Installation from stock, updates, recovery, return to stock |
 | [`include/hw/`](include/hw/README.md) | Register reference: every known MT7996, A-die and AN7581 register, as C headers |
-| [`docs/`](docs/) | [Architecture](docs/architecture.md), [roadmap](docs/roadmap.md) |
+| [`docs/`](docs/) | [Architecture](docs/architecture.md), [roadmap](docs/roadmap.md), [crystal trim experiment](docs/xtal-trim.md), [PLL fine tuning](docs/pll-fine-tune.md), [router NCO feasibility](docs/router-nco.md) |
 
 ## Getting started
 
