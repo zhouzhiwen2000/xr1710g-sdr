@@ -34,6 +34,9 @@ An optional [DSP NCO receive path](docs/dsp-nco.md) supports phase-continuous
 frequency correction at 40/80 MS/s on the router. It is disabled by default
 and can use the existing UE frequency-control interface.
 
+The [hardware and memory topology](docs/diagrams/sources.md) includes a
+three-page PDF showing the radio dies, WM/WA/DSP cores, SRAM, DDR and DMA paths.
+
 The W1700K description and installation instructions below are retained from
 upstream; XR1710G users should follow the board-specific guide above.
 

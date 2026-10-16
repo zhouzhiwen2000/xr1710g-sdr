@@ -5,6 +5,10 @@ chainloaded U-Boot. It does not build or install another bootloader, expose
 NAND to Linux, or run the W1700K installer. The original Secure Boot
 bootloader and the unit's DSD/calibration remain outside the test kernel.
 
+The separate [GDM2 recovery Ethernet patch](uboot-gdm2/README.md) supplies
+the validated driver and board changes for the chainloaded U-Boot, with its
+source revision, test scope and installation boundary documented.
+
 Board wiring is based on the XR1710G device tree at
 `naoki66/ImmortalWrt-for-Gemtek-brightspeed`, commit
 `04cc62e8928308598cf2e88bddee37ede658b814`: AN7581, 2 GiB RAM,
