@@ -6,7 +6,9 @@
     w1700k band B [--rate 40|80|160|320|640/2] [--lo FREQ]
                                     capture band B (at another sample rate, Msps, or LO); 640/2:
                                     band 2 captured at 640 Msps, every other sample streamed
-    w1700k start                    stream (14-bit IQ raw up to 160 Msps, packed half above)
+    w1700k start [--dsp-nco | --no-dsp-nco]
+                                    stream; optional DSP NCO at 40/80 Msps, default off
+    w1700k nco HZ                   change DSP frequency online without flushing samples
     w1700k stop
     w1700k status [--rf]            receiver state (--rf: read the active band's RF registers)
     w1700k tune FREQ                LO of the active band, e.g. 5250M, 5.25G or 2441.000123M
@@ -88,7 +90,11 @@ def build_parser():
     p.add_argument('band', type=int, choices=(0, 1, 2))
     p.add_argument('--rate', choices=RATE_CHOICES, help='Msps; 640/2: band 2 at 640 Msps, every other sample')
     p.add_argument('--lo', type=frequency)
-    sub.add_parser('start', help='start streaming')
+    p = sub.add_parser('start', help='start streaming')
+    p.add_argument('--dsp-nco', action=argparse.BooleanOptionalAction, default=None,
+                   help='enable/disable the DSP NCO path (40/80 MS/s, restart required)')
+    p = sub.add_parser('nco', help='set DSP baseband frequency shift online, Hz')
+    p.add_argument('hz', type=float)
     sub.add_parser('stop', help='stop streaming')
     p = sub.add_parser('status', help='print the receiver state')
     p.add_argument('--rf', action='store_true', help="also read the active band's RF registers")
@@ -143,7 +149,9 @@ def run_command(controller, args):
         rate, capture = RATE_CHOICES.get(args.rate, (None, None))
         controller.configure(args.band, rate, args.lo, capture)
     elif command == 'start':
-        controller.start()
+        controller.start(args.dsp_nco)
+    elif command == 'nco':
+        return controller.nco(args.hz)
     elif command == 'stop':
         controller.stop()
     elif command == 'status':

@@ -155,7 +155,10 @@
  * is 8 KiB. No address-high bits are needed for MCU addresses.
  * Payload sources TX0 reads directly: the UMAC pool (CPU-written cacheable
  * data needs a D-cache write-back first), WM ULM2, WM patch SRAM
- * (0x0090d000, 0x00910000..0x00915fff), WA DLM (0x1025e100..0x102637ff).
+ * (0x0090d000, 0x00910000..0x00915fff), WA DLM (0x1025e100..0x102637ff),
+ * and initialized, running DSP DTCM (7168 bytes at 0x8620a000 + b*0x400000,
+ * all three cores, exact PCIe/host data checks; 2026-10-16). The DTCM-only
+ * repeat test reached ~715 MB/s per source, each tested separately.
  * Host RX0 ring: 1536 descriptors work; 4096 were accepted by the size
  * write but never delivered. [measured]
  */
@@ -228,13 +231,24 @@
  */
 
 /* ========================================================================
- * MEM_DMA (engine 1) [static; never used for data on hardware]
+ * MEM_DMA (engine 1)
  * ======================================================================== */
+/* TX0 -> RX0 [measured on XR1710G, 2026-10-16]: bidirectional copies
+ * between UMAC pool 0xe0400000/0xe0404000 and each initialised DSP's DTCM
+ * at 0x86206000 + b * 0x400000. Independent WM reads, guard words and a
+ * DSP-local XOR followed by DMA readback verified the mapping on all cores.
+ * A short 8 KiB x 128 test, one transfer outstanding, measured 785..787 MB/s
+ * pool -> DTCM and 798 MB/s DTCM -> pool, using the WM's 720 MHz cycle
+ * counter. These are isolated transfer rates, not concurrent IQ throughput.
+ * Flush/invalidate WM cache around pool access. Wait for RX descriptor
+ * DDONE as well as both DMA indices before reusing a descriptor; the RX
+ * index can advance before its descriptor writeback becomes visible.
+ * Load/start the DSP and verify its heartbeat first (see dsp.h). */
 /* WM: engine-1 TX0 adapter 0x0222c928 (descriptors 0x0223fec0..0x0223ff40,
  * 8), RX1 adapter 0x0222c978 (descriptors 0x0223fcc0..0x0223fd40, 8). WA:
  * TX1 at 0x58000310 (4 entries), RX0 at 0x58000500 (8). The ROM sets RX0
  * prefetch 0x58000680 to base 0x220 / depth 2; the WA's table says base
- * 0x2c0 (unresolved). */
+ * 0x2c0 (unresolved). These stock adapter assignments are [static]. */
 #define MT7996_MEM_DMA_WM_TX0_ADAPTER     0x0222c928u
 #define MT7996_MEM_DMA_WM_RX1_ADAPTER     0x0222c978u
 

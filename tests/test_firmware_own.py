@@ -83,9 +83,10 @@ class Images(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<I', plain)[0], CSRRCI_MSTATUS_MIE)
         self.assertLessEqual(entry + len(plain), own.PRODUCER_BASE['raw'])
         self.assertEqual([(a, f) for a, f, _ in producers],
-                         [(own.PRODUCER_BASE['raw'], 0x01), (own.PRODUCER_BASE['half'], 0x01)])
+                         [(own.PRODUCER_BASE[k], 0x01) for k in ('raw', 'half', 'dsp')])
         for address, _, code in producers:
-            self.assertLessEqual(len(code), own.PRODUCER_SIZE)
+            limit = own.WM_LIMIT if address == own.PRODUCER_BASE['dsp'] else address + own.PRODUCER_SIZE
+            self.assertLessEqual(address + len(code), limit)
         self.assertNotEqual(producers[0][2], producers[1][2], 'one producer per packing schedule')
         self.assertLessEqual(own.PRODUCER_BASE['half'] + own.PRODUCER_SIZE, own.WM_LIMIT)
         self.assertEqual((cram, cram_feature), (own.WM_CRAM, 0x01))

@@ -119,6 +119,10 @@
 #define   MT7996_PROBE_RES_ST_WA_NOSTART  8u
 #define   MT7996_PROBE_RES_ST_WA_NOEXIT   9u
 #define   MT7996_PROBE_RES_ST_WA_BUSY     10u	/* WA soft-interrupt dispatch not at rest */
+#define   MT7996_PROBE_RES_ST_DSP_FAULT   11u
+#define   MT7996_PROBE_RES_ST_MEM_DMA     12u
+#define   MT7996_PROBE_RES_ST_NO_PROGRESS 13u
+#define   MT7996_PROBE_RES_ST_OWNERSHIP   14u
 #define MT7996_PROBE_RES_CPU_END          0x04u
 #define MT7996_PROBE_RES_TX_DMA_END       0x08u
 #define MT7996_PROBE_RES_CR9_END          0x0cu

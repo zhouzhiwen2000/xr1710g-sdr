@@ -37,7 +37,9 @@ DONE_FILE = '/tmp/w1700k-stream.done'
 
 STATUS = {-1: 'no result page', 0: 'not reached', 2: 'go word never came', 3: 'overrun', 4: 'TX0 busy at start',
           5: 'firmware ring adapter out of step', 6: 'TX0 did not drain', 7: 'stopped',
-          8: 'WA did not start', 9: 'WA did not exit', 10: 'WA dispatch not at rest'}
+          8: 'WA did not start', 9: 'WA did not exit', 10: 'WA dispatch not at rest',
+          11: 'DSP fault or invalid result', 12: 'MEM_DMA fault or busy',
+          13: 'DSP pipeline stalled', 14: 'DSP buffer ownership error'}
 RES32 = ('status', 'cpu_end', 'tx_dma_end', 'cr9_end', 'cr0_end', 'sent_after', 'done_after', 'err_status',
          'go_wait_cycles', 'first_cr9', 'wa_status', 'pack_max_cycles', 'max_lag', 'wa_pack_max', 'wa_sp', 'wa_ra',
          'wa_exit_cycles', 'ctl_served')
@@ -101,11 +103,12 @@ class Stream:
     def __init__(self, unit):
         self.unit = unit
 
-    def install_own(self, w, packing):
+    def install_own(self, w, packing, step=0, run=0):
         """Our own firmware: one STREAM command; our WM arms the route and ICAP0, starts the WA for
         packing, and runs the producer it carries, which waits for the pump's go word. The command
         is acknowledged when the stream has ended (collect_own)."""
-        w.radio_post('stream', wm_mod.RADIO_PACKING[packing])
+        args = (wm_mod.RADIO_PACKING[packing], step, run) if packing == 'dsp' else (wm_mod.RADIO_PACKING[packing],)
+        w.radio_post('stream', *args)
 
     def collect_own(self, w, packing):
         """After the pump ended on our own WM: its STREAM command acknowledged (after the producer's
@@ -117,7 +120,7 @@ class Stream:
         w.radio_wait(w.status()['radio_req'], 'stream', timeout=PRODUCER_RETURN_SECONDS)
         page = struct.pack(f'<{RESULT_WORDS}I', *w.session.ctl(read=(DONE_AT, RESULT_WORDS))[0])
         result = parse_result(page, reader)
-        if packing != 'raw' and result.status > 0 and not wa_exited(page):
+        if packing == 'half' and result.status > 0 and not wa_exited(page):
             raise StreamError('the WA did not leave the packer; reload the firmware')
         return result
 

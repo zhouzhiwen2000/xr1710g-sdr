@@ -21,10 +21,22 @@
  *
  * The DSPs are compute islands for LOAD/STORE: they cannot reach SYSRAM,
  * ULM, CRAM or the UMAC pool at any address (a 448-probe scan of every
- * 16 MiB base found no alias). Data reaches DTCM only by MCU copy (35 MB/s),
- * the download engine, or the PHY-side DFE capture engine, which addresses
- * DTCM 0x206000..0x20ffff as 0x80206000..0x8020ffff (see the capture
- * headers; unproven as an RX input).
+ * 16 MiB base found no alias). External masters can reach DTCM through the
+ * MCU view: MCU copy (35 MB/s), the download engine, and MEM_DMA engine 1.
+ * MEM_DMA TX0 -> RX0 passed bidirectional transfers between the UMAC pool
+ * and all three DTCMs on XR1710G [measured, 2026-10-16]. Load and start a
+ * valid DSP program, initialise its local memory windows and verify its
+ * heartbeat before accessing DTCM; enabling a core while holding it in
+ * reset was insufficient and a DMA write required a cold power cycle to
+ * recover. MCU_DMA0 TX0 also reads packed output directly from each DTCM
+ * into host memory: 7168-byte repeated buffers passed exact checks at
+ * ~715 MB/s per source, tested separately [measured, 2026-10-16]. A three-
+ * DSP fused NCO/packing pipeline with double-buffered MEM_DMA input reached
+ * ~123 MS/s (81.63 MS/s with frequent clipping), including
+ * PCIe output; UDP payloads matched on the Linux host. See mcu_dma.h and
+ * docs/dsp-nco.md for the test scope.
+ * The PHY-side DFE capture engine addresses DTCM 0x206000..0x20ffff as
+ * 0x80206000..0x8020ffff (see the capture headers; unproven as an RX input).
  *
  * Confidence tags: [measured] verified on hardware, [static] read from
  * firmware/ROM code, [inferred].
@@ -179,10 +191,20 @@
 /* custom-3 MAC (full 32-bit signed operands, accumulators >= 36 bits): */
 #define   MT7996_DSP_MAC_SET_F7           0x60u	/* funct3 0: acc = rs1 * rs2 */
 #define   MT7996_DSP_MAC_ACC_F7           0x40u	/* funct3 1: acc += ; funct3 3: acc -= */
+#define   MT7996_DSP_MAC_READ_F7          0x02u
 #define   MT7996_DSP_MAC_F3_SET           0u
 #define   MT7996_DSP_MAC_F3_ADD           1u
 #define   MT7996_DSP_MAC_F3_SUB           3u
 #define   MT7996_DSP_MAC_F3_READ          6u	/* rd = round(acc[rs1] >> reg[rs2]), half up, low 32 */
+/* custom-2, rs2 encoding must be zero for these unary operations. Functional
+ * tests on all three cores covered signed boundaries and overflow. */
+#define   MT7996_DSP_SAT_F7               0x02u
+#define   MT7996_DSP_SAT16_F3             4u	/* rd = clamp_signed16(rs1) */
+#define   MT7996_DSP_ROUND16_F3           2u	/* rd = sat16((int64(rs1) + 32768) >> 16) */
+/* Standard RVV is not advertised (misa.V=0); vlenb and vsetvli trapped as
+ * illegal instructions on all three cores after attempting to enable VS.
+ * The 128-bit register-group memory operations below do not establish
+ * vector arithmetic support. [measured, 2026-10-16] */
 /* Zero-overhead hardware loops use BRANCH funct3 2 and 3. */
 
 /*

@@ -4,7 +4,8 @@
 The ROM starts no core until every required RAM type has had its FW_START: its handler collects
 one bit per type and compares them with a required mask a ROM routine sets to WM | WA | DSP
 (retail 0x00839446). Our ROM patch's start-mask hook (rom_patch/hook-start-mask.S) counts the
-DSP as started, so no DSP image is loaded. Our WA serves the stream packer the way MediaTek's WA
+DSP as started, so the default path needs no DSP image. The optional NCO image
+is downloaded between WM and WA. Our WA serves the stream packer the way MediaTek's WA
 dispatch does (wa/wa.c).
 """
 import shutil
@@ -20,7 +21,7 @@ WM_ENTRY, WM_LIMIT = 0x00916400, 0x00938000       # ULM1, as wm/wm.h
 WM_CRAM, WM_CRAM_LIMIT = 0xe0040000, 0xe027c000    # CRAM, as wm/wm.h
 # The stream producer, one image per packing schedule, in ULM1 above our WM's code; the WA packer at
 # the address the producer raises the WA into (stream/layout.h WA_CODE). Loaded with the firmware.
-PRODUCER_BASE = {'raw': 0x00930000, 'half': 0x00932000}
+PRODUCER_BASE = {'raw': 0x00930000, 'half': 0x00932000, 'dsp': 0x00934000}
 PRODUCER_SIZE = 0x2000
 WA_ENTRY, WA_LIMIT = 0x10000000, 0x1001c000       # WA ILM
 VERSION = 'w1700k-own'
@@ -52,6 +53,7 @@ def wm_code(keep_elf=None):
         raise SystemExit('the WM build needs ' + ', '.join(missing))
     defines = blob._schedule_defines(blob.RAW)
     defines.update(WM_PRODUCER_RAW=f"{PRODUCER_BASE['raw']:#x}u", WM_PRODUCER_HALF=f"{PRODUCER_BASE['half']:#x}u")
+    defines['WM_PRODUCER_DSP'] = f"{PRODUCER_BASE['dsp']:#x}u"
     flags = blob.CFLAGS + [f'-I{HERE.parent / "include"}'] + [f'-D{k}={v}' for k, v in defines.items()]
     with tempfile.TemporaryDirectory() as tmp:
         objects = []
@@ -97,6 +99,9 @@ def wm_container():
     ulm1, cram = wm_code(HERE / 'build' / 'w1700k_wm.elf')
     regions = [(WM_ENTRY, ulm1, ENTRY)]
     regions += [(PRODUCER_BASE[p.name], producer(p), container.FEATURE_ENCRYPT) for p in blob.PACKINGS]
+    regions.append((PRODUCER_BASE['dsp'], blob.compile_blob(
+        ['lead.S', 'dsp_producer.c'], blob._schedule_defines(blob.RAW),
+        PRODUCER_BASE['dsp'], WM_LIMIT), container.FEATURE_ENCRYPT))
     regions.append((WM_CRAM, cram, container.FEATURE_ENCRYPT))
     return container.ram_container(regions, VERSION, BUILD_DATE)
 
@@ -113,3 +118,11 @@ def build():
         ('wm', 'w1700k_wm.bin', wm_container(), ()),
         ('wa', 'w1700k_wa.bin', wa_container(), ('--wa',)),
     ]
+
+
+def dsp_container():
+    """Optional image: downloaded only when the host selects the DSP RX path."""
+    from dsp.probe import build as dsp_build
+    with tempfile.TemporaryDirectory() as tmp:
+        code = dsp_build.compile_image(Path(tmp), 'dsp-nco-code', dsp_build.dsp_sources(), 0, '_start', 0x4000)
+    return dsp_build.ram_container(code)

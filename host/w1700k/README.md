@@ -26,6 +26,7 @@ Build the firmware first (`make -C firmware`); the host reads `firmware/build/fi
 | `unit.module` | `/lib/modules/w1700k_sdr.ko` | driver loaded by `load` |
 | `eeprom` | see below | the unit's calibration EEPROM |
 | `firmware_dir` | `<repo>/firmware/build` | built firmware set |
+| `dsp_nco.enabled`, `dsp_nco.frequency_hz` | `false`, `0.0` | optional DSP receive path and initial baseband shift in Hz (40/80 MS/s) |
 | `export.interface`, `src_ip`, `dst_ip` | `eth1`, `10.77.0.1`, `10.77.0.10` | 10 GbE path |
 | `export.dst_mac` | MAC of the local interface holding `dst_ip` | |
 | `export.port`, `export.ports` | `7700`, `8` | UDP destination port; source ports cycle over `ports` |
@@ -46,7 +47,8 @@ is written to the unit's flash or eFuses.
 |---|---|
 | `load [--band B]` | load our firmware, bring the radio up from cold, every band at its LO and sample rate; B captured (about 2 s) |
 | `band B [--rate RATE] [--lo FREQ]` | capture band B; another rate (40, 80, 160, 320 Msps, or `640/2` on band 2) or LO |
-| `start` | start streaming (packing follows the rate, see below) |
+| `start [--dsp-nco / --no-dsp-nco]` | start streaming; override the configured DSP path selection |
+| `nco HZ` | online DSP baseband shift in Hz; preserves phase and queued samples |
 | `stop` | stop streaming |
 | `status [--rf]` | the state below; `--rf` reads the active band's synthesizer, filter and gain |
 | `tune FREQ` | LO of the active band, any Hz it locks at (`5250M`, `2.442G`, `2441.000123M`) |
@@ -56,6 +58,9 @@ is written to the unit's flash or eFuses.
 | `serve` | the JSON control protocol below |
 | `push [--from DIR] [--to DIR]` | development: copy a fresh driver and the clients to `/tmp/w1700k` |
 | `fw` | development: our WM's and WA's status blocks (`wm.py`) |
+
+See [DSP NCO](../../docs/dsp-nco.md) for path switching, online frequency control
+and the existing UE helper interface. The DSP path is disabled by default.
 
 After `push`, set `unit.bin_dir` to `/tmp/w1700k` and `unit.module` to
 `/tmp/w1700k/w1700k_sdr.ko`; the next `load` replaces the running driver.

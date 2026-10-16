@@ -15,6 +15,7 @@
 
 #include "../stream/stream.h"
 #include "../stream/ctl.h"
+#include "../stream/dsp_nco.h"
 #include "../radio/hal.h"
 #include "../radio/radio.h"
 #include "../radio/radio_cmd.h"
@@ -62,6 +63,8 @@ static uint32_t stream(uint32_t packing)
 		if ((res = wa_start()))
 			return res;
 		producer = (void (*)(void))(uintptr_t)WM_PRODUCER_HALF;
+	} else if (packing == RADIO_PACKING_DSP) {
+		producer = (void (*)(void))(uintptr_t)WM_PRODUCER_DSP;
 	} else {
 		return RADIO_ERR_ARG;
 	}
@@ -73,7 +76,8 @@ static uint32_t stream(uint32_t packing)
 	producer();
 	asm volatile("csrci mstatus, %0" : : "n"(MT7996_MCU_MSTATUS_MIE) : "memory");
 	res = RES->status;
-	if (packing == RADIO_PACKING_RAW || (RES->wa_status & RES_WA_EXITED))
+	if (packing == RADIO_PACKING_RAW || (packing == RADIO_PACKING_HALF && (RES->wa_status & RES_WA_EXITED)) ||
+	    (packing == RADIO_PACKING_DSP && (RES->wa_status & DSP_QUIESCED)))
 		stream_disarm();
 	return res;
 }

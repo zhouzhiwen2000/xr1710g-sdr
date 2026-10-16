@@ -24,11 +24,13 @@ Rules the hardware imposes:
 """
 import json
 import queue
+import secrets
 import sys
 import threading
 import time
 
 from . import config, firmware, rf, wm
+from . import dsp_nco as nco_control
 from .config import local_mac_for
 from dataclasses import replace
 
@@ -39,7 +41,7 @@ from .unit import Unit
 STATE_FILE = '/tmp/w1700k-state.json'
 BANDS = (0, 1, 2)
 DEFAULT_BAND = 1
-PACKINGS = ('raw', 'half')
+PACKINGS = ('raw', 'half', 'dsp')
 RAW_MAX_RATE = 160_000_000        # raw 14-bit IQ above this exceeds one 10 GbE link: packed half
 START_TIMEOUT = 10.0
 COMMAND_TIMEOUT = 60.0
@@ -59,6 +61,8 @@ def packing_for(rate):
 
 
 def packing_allows(packing, rate):
+    if packing == 'dsp':
+        return rate in nco_control.ALLOWED_RATES
     return packing == 'half' or rate <= RAW_MAX_RATE
 
 
@@ -78,6 +82,8 @@ class Controller:
         self._ctl = None
         self.boot_id = None
         self.loaded = False
+        self.dsp_loaded = False
+        self.nco_hz = config.dsp_nco.frequency_hz
         self.bands = dict(DEFAULT_BANDS)
         self.bands_ready = []
         self.band = DEFAULT_BAND
@@ -103,6 +109,8 @@ class Controller:
                        'sample_rate': cfg.sample_rate, 'center_hz': rfs['lo_hz']},
             'rf': dict(rfs, lo_range_hz=list(self.lo_lock.get(self.band, LO_RANGE[self.band]))),
             'error': self.error,
+            'dsp_nco': {'enabled': self.packing == 'dsp', 'loaded': self.dsp_loaded,
+                        'frequency_hz': self.nco_hz},
         }
 
     def _changed(self):
@@ -120,7 +128,8 @@ class Controller:
                   'lo_lock': {str(b): list(v) for b, v in self.lo_lock.items()},
                   'bands': {str(b): c.as_dict() for b, c in self.bands.items()},
                   'bands_ready': self.bands_ready, 'packing': self.packing,
-                  'rf': {str(b): v for b, v in self.rf.items()}, 'synth_locked': self.synth_locked}
+                  'rf': {str(b): v for b, v in self.rf.items()}, 'synth_locked': self.synth_locked,
+                  'dsp_loaded': self.dsp_loaded, 'nco_hz': self.nco_hz}
         self.unit.push(json.dumps(record).encode(), STATE_FILE)
 
     def attach(self):
@@ -147,6 +156,8 @@ class Controller:
         self.bands, self.band = bands, record['band']
         self.loaded, self.bands_ready = bool(record['loaded']), list(record['bands_ready'])
         self.packing = record['packing']
+        self.dsp_loaded = bool(record.get('dsp_loaded', False))
+        self.nco_hz = record.get('nco_hz', self.config.dsp_nco.frequency_hz)
         self.rf = rfs
         self.lo_lock = {int(b): tuple(v) for b, v in record.get('lo_lock', {}).items()}
         locks = record.get('synth_locked', [None] * len(BANDS))
@@ -171,7 +182,7 @@ class Controller:
 
     def load(self, band=None):
         """Download our firmware and bring the radio up from cold, every band at its LO and sample rate."""
-        return self.run('loading', self._load, band)
+        return self.run('loading', self._load, band, self.config.dsp_nco.enabled)
 
     def configure(self, band, sample_rate=None, lo_hz=None, capture_rate=None):
         """Capture `band`, optionally at another sample rate (RATE) and LO (TUNE); what is not given
@@ -185,11 +196,23 @@ class Controller:
                 raise ValueError('a capture rate needs its sample rate')
             sample_rate, capture_rate = cur.sample_rate, cur.capture_rate
         cfg = BandConfig(band, cur.lo_hz if lo_hz is None else int(lo_hz), sample_rate, capture_rate).validate()
+        if self.packing == 'dsp' and cfg.sample_rate not in nco_control.ALLOWED_RATES:
+            raise ValueError('DSP NCO supports 40/80 MS/s; stop and disable it before selecting a higher rate')
         self._check_lock_range(band, cfg.lo_hz)
         return self.run('configuring', self._configure, cfg)
 
-    def start(self):
-        return self.run('starting', self._start)
+    def start(self, dsp_nco=None):
+        return self.run('starting', self._start, dsp_nco)
+
+    def nco(self, hz):
+        """Apply a baseband frequency shift at a block boundary without flushing IQ."""
+        if self.packing != 'dsp':
+            raise ControlError('start the DSP NCO path before changing its frequency')
+        result = nco_control.set_frequency(self._session(), hz, self.bands[self.band].sample_rate)
+        self.nco_hz = result['frequency_hz']
+        self._save()
+        self._changed()
+        return result
 
     def stop(self):
         return self.run('stopping', self._stop)
@@ -344,7 +367,7 @@ class Controller:
         self._command('rate', cfg.band, cfg.rate_code)
         self._command('capture', cfg.band, cfg.rate_code)
 
-    def _load(self, band=None):
+    def _load(self, band=None, dsp_nco=False):
         if band is not None:
             if band not in BANDS:
                 raise ValueError('band 0, 1 or 2')
@@ -352,9 +375,10 @@ class Controller:
         if self.packing:
             self._stop()
         self._close_ctl()
-        fw = firmware.load(self.config.firmware_dir)
+        fw = firmware.load(self.config.firmware_dir, dsp_nco=dsp_nco)
         eeprom = self._eeprom()
         self.loaded, self.bands_ready, self.lo_lock = False, [], {}
+        self.dsp_loaded = False
         self._save()
         self._progress('loading our firmware', 0.0)
         wm.load(self.radio, fw, self.config.unit.module)
@@ -372,6 +396,7 @@ class Controller:
         self.lo_lock = {b: self._probe_lock(b) for b in BANDS}
         self._command('select', self.band)
         self.loaded = True
+        self.dsp_loaded = dsp_nco
         self.rf = {b: default_rf(cfg, self._filter_of(b)) for b, cfg in self.bands.items()}
         self.synth_locked = rf.synth_locks(self._session())
         self._save()
@@ -394,7 +419,7 @@ class Controller:
         running = self.packing
         if not self.loaded:
             self.bands[b], self.band = cfg, b
-            self._load()
+            self._load(dsp_nco=self.config.dsp_nco.enabled)
             return
         old = self.bands[b]
         if cfg.rate_code == old.rate_code and b in self.bands_ready:
@@ -402,7 +427,7 @@ class Controller:
             # carries that rate, else restarted with the packing it needs), then the LO alone if it
             # moved
             if b != self.band:
-                if running and packing_allows(running, cfg.sample_rate):
+                if running and running != 'dsp' and packing_allows(running, cfg.sample_rate):
                     self._switch_mid_stream(b)
                 else:
                     if running:
@@ -411,7 +436,7 @@ class Controller:
                     self.band = b
                     self._save()
                     if running:
-                        self._start()
+                        self._start(dsp_nco=(running == 'dsp'))
             if cfg.lo_hz != old.lo_hz:
                 self._tune_band(b, cfg.lo_hz)
             return
@@ -430,7 +455,7 @@ class Controller:
         if cfg.lo_hz != old.lo_hz:
             self._tune_band(b, cfg.lo_hz)
         if running:
-            self._start()
+            self._start(dsp_nco=(running == 'dsp'))
 
     def _switch_mid_stream(self, band):
         before, after = rf.select_band(self._session(), band)
@@ -439,16 +464,29 @@ class Controller:
         self._log('info', f'capturing band {band} from ICAP0 write pointer {before:#x}..{after:#x}')
         self._check_locks()
 
-    def _start(self):
+    def _start(self, dsp_nco=None):
+        enabled = self.config.dsp_nco.enabled if dsp_nco is None else dsp_nco
+        if type(enabled) is not bool:
+            raise ValueError('dsp_nco must be boolean')
         if self.packing:
+            if dsp_nco is not None and enabled != (self.packing == 'dsp'):
+                raise ControlError('stop reception before switching the DSP NCO path')
             return
-        packing = packing_for(self.bands[self.band].sample_rate)
-        if not self.loaded:
-            self._load()
+        rate = self.bands[self.band].sample_rate
+        if enabled and rate not in nco_control.ALLOWED_RATES:
+            raise ValueError('DSP NCO supports 40/80 MS/s')
+        packing = 'dsp' if enabled else packing_for(rate)
+        step = nco_control.phase_step(self.config.dsp_nco.frequency_hz, rate) if enabled else 0
+        if not self.loaded or (enabled and not self.dsp_loaded):
+            self._load(dsp_nco=enabled)
         export = self.config.export
         dst_mac = export.dst_mac or local_mac_for(export.dst_ip)
         self.stream.check_interface(export.interface)
-        self.stream.install_own(self._wm(), packing)
+        if enabled:
+            self.stream.install_own(self._wm(), packing, step, secrets.randbits(32) or 1)
+            self.nco_hz = nco_control.frequency(step, rate)
+        else:
+            self.stream.install_own(self._wm(), packing)
         self.stream.launch(export, dst_mac)
         self.packing = packing
         self._save()
@@ -469,7 +507,8 @@ class Controller:
             except rf.CtlTimeout:
                 values, via_pump = [None], False          # the stream is still taking the device
             if via_pump and values[0] == 0:
-                return
+                if self.packing != 'dsp' or nco_control.read(session)[nco_control.RUNNING]:
+                    return
             if self.stream.finished():
                 raise StreamError('the stream ended at start')
             time.sleep(0.2)
@@ -504,6 +543,9 @@ class Controller:
             self._log('warn', f'stream clean-up: {exc}')
             result = Result(0, 0, 0.0, False, None)
         self.packing = None
+        if packing == 'dsp' and not result.ok:
+            self.loaded = self.dsp_loaded = False
+            self.bands_ready = []
         self._save()
         return result
 
@@ -542,7 +584,7 @@ def handle(controller, request):
                              _require(request, 'lo_hz', (int, float), True),
                              _require(request, 'capture_rate', int, True))
     elif op == 'start':
-        controller.start()
+        controller.start(_require(request, 'dsp_nco', bool, True))
     elif op == 'stop':
         controller.stop()
     elif op == 'tune':
@@ -551,6 +593,8 @@ def handle(controller, request):
         controller.gain(bool(request.get('agc')), _require(request, 'lna', int, True), _require(request, 'lpf', int, True))
     elif op == 'filter':
         controller.filter(_require(request, 'mhz', int))
+    elif op == 'nco':
+        return controller.nco(_require(request, 'hz', (int, float)))
     else:
         raise ValueError(f'unknown op {op!r}')
     return {}

@@ -14,6 +14,7 @@ means the MAC of the local interface that holds dst_ip.
 """
 import ipaddress
 import json
+import math
 import os
 import re
 import subprocess
@@ -50,11 +51,18 @@ class ExportConfig:
 
 
 @dataclass(frozen=True)
+class DspNcoConfig:
+    enabled: bool = False
+    frequency_hz: float = 0.0
+
+
+@dataclass(frozen=True)
 class Config:
     unit: UnitConfig = field(default_factory=UnitConfig)
     eeprom: Path | None = None        # None: see eeprom_path()
     firmware_dir: Path = REPO / 'firmware' / 'build'
     export: ExportConfig = field(default_factory=ExportConfig)
+    dsp_nco: DspNcoConfig = field(default_factory=DspNcoConfig)
 
 
 def _section(cls, values, name):
@@ -77,7 +85,7 @@ def parse(data):
     """A Config from the decoded JSON object, validated."""
     if not isinstance(data, dict):
         raise ConfigError('the configuration must be a JSON object')
-    unknown = sorted(set(data) - {'unit', 'eeprom', 'firmware_dir', 'export'})
+    unknown = sorted(set(data) - {'unit', 'eeprom', 'firmware_dir', 'export', 'dsp_nco'})
     if unknown:
         raise ConfigError(f'unknown keys {unknown}')
     config = Config()
@@ -85,6 +93,14 @@ def parse(data):
         config = replace(config, unit=_section(UnitConfig, data['unit'], 'unit'))
     if 'export' in data:
         config = replace(config, export=_section(ExportConfig, data['export'], 'export'))
+    if 'dsp_nco' in data:
+        nco = data['dsp_nco']
+        if not isinstance(nco, dict) or set(nco) - {'enabled', 'frequency_hz'}:
+            raise ConfigError('dsp_nco: expected enabled and frequency_hz settings')
+        enabled, hz = nco.get('enabled', False), nco.get('frequency_hz', 0.0)
+        if type(enabled) is not bool or type(hz) not in (int, float) or not math.isfinite(hz):
+            raise ConfigError('dsp_nco: enabled must be boolean and frequency_hz finite')
+        config = replace(config, dsp_nco=DspNcoConfig(enabled, float(hz)))
     for key in ('eeprom', 'firmware_dir'):
         if key in data:
             if not isinstance(data[key], str):

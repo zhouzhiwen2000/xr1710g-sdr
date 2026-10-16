@@ -45,7 +45,7 @@ def _image(entry, directory):
     return Image(role, directory / name, size, digest, flags)
 
 
-def parse(manifest, directory):
+def parse(manifest, directory, dsp_nco=False):
     """A Firmware from a decoded firmware.json whose files live in `directory`."""
     if not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA:
         raise FirmwareError(f'firmware.json: expected schema {SCHEMA}; rebuild with make -C firmware')
@@ -56,10 +56,17 @@ def parse(manifest, directory):
         raise FirmwareError(f'firmware.json: {exc}')
     if tuple(c.role for c in containers) != ROLES:
         raise FirmwareError(f'firmware.json: containers must be {", ".join(ROLES)} in that order')
+    if dsp_nco:
+        if 'dsp_nco' not in manifest:
+            raise FirmwareError('firmware has no DSP NCO image; rebuild with make -C firmware')
+        dsp = _image(manifest['dsp_nco'], directory)
+        if dsp.role != 'dsp' or dsp.flags != ('--dsp',):
+            raise FirmwareError('firmware.json: invalid optional DSP NCO image')
+        containers = containers[:2] + (dsp,) + containers[2:]
     return Firmware(containers)
 
 
-def load(directory):
+def load(directory, dsp_nco=False):
     path = Path(directory) / 'firmware.json'
     if not path.is_file():
         raise FirmwareError(f'{path} not found; build the firmware with make -C firmware')
@@ -67,4 +74,4 @@ def load(directory):
         manifest = json.loads(path.read_text())
     except ValueError as exc:
         raise FirmwareError(f'{path}: {exc}')
-    return parse(manifest, path.parent)
+    return parse(manifest, path.parent, dsp_nco=dsp_nco)

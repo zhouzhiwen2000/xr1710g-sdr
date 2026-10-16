@@ -8,6 +8,7 @@ with no MediaTek file. `make -C firmware` writes them to `firmware/build/`:
 | `w1700k_rom_patch.bin` | patch | only our three ROM hooks, no MediaTek body (`rom_patch/`) |
 | `w1700k_wm.bin` | wm | our WM: the radio bring-up and band set-up, the stream producer, RF control (`wm/`, `radio/`, `stream/`) |
 | `w1700k_wa.bin` | wa | our WA: the stream packer (`wa/`, `stream/`) |
+| `w1700k_dsp_nco.bin` | dsp | optional three-core receive NCO and packed output (`dsp/`) |
 | `firmware.json` | | role, file, size, sha256 and download flags of each, in download order |
 
 Requirements: Python 3.10+, `clang` with the RISC-V target, `ld.lld`, `llvm-objcopy`,
@@ -15,7 +16,8 @@ Requirements: Python 3.10+, `clang` with the RISC-V target, `ld.lld`, `llvm-objc
 
 The MT7996's three processor types (WM, WA, DSP) are RISC-V (Andes). The ROM authenticates
 neither the patch's hook table nor, behind our CRC hook, the RAM images, so our code runs from
-the patch onward. No DSP image is loaded.
+the patch onward. The default path loads no DSP image. Enabling
+[DSP NCO](../docs/dsp-nco.md) inserts its RAM image between WM and WA.
 
 ## ROM patch (`rom_patch/`)
 
@@ -109,6 +111,16 @@ reads the pool through the D-cache), then polls the soft-interrupt action word a
 packer when the producer raises it. Our WM starts the WA for the first half-packed stream, once
 the radio is configured: a WA started earlier leaves the receiver without antenna signal. Its
 status block is at `0x0090f3e0`.
+
+## Optional DSP receive path
+
+`stream/dsp_producer.c`, linked at `0x00934000`, reads continuous ICAP blocks
+through MEM_DMA, schedules the three DSPs and publishes their packed buffers
+through MCU_DMA0 in sample order. Its control page at `0x0090f100` carries
+run-scoped, expiring frequency commands. A shared phase accumulator preserves
+phase across updates and cores. The DSP code, initialized local memories and
+coefficient tables are in the optional `dsp/` RAM image. See
+[DSP firmware](dsp/README.md) for its buffer layout and arithmetic.
 
 ## Containers (`own.py`, `container.py`, `aes.py`)
 

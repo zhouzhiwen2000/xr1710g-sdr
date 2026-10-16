@@ -3,8 +3,16 @@
 Measured on 2026-10-15. Router-side NCO is feasible in principle on the
 AN7581's Cortex-A53 NEON units. The current 320 MS/s transport has insufficient
 demonstrated headroom to add it safely. A 40 MS/s integration is the sensible
-first target; neither 40 nor 80 MS/s has yet been validated end to end with a
-router-side NCO.
+first target for an A53 implementation; neither 40 nor 80 MS/s has been
+validated end to end with an A53 NCO.
+
+A subsequent [MT7996 DSP NCO test](dsp-nco.md) reached 122.1–123.6 MS/s through
+input DMA, three-core fused rotation/packing and PCIe output, with exact payload
+validation over 10 GbE. Double buffering overlaps transfers with computation;
+frequently clipping inputs measured 81.63 MS/s. The resulting optional DSP
+receive path now supports continuous 40/80 MS/s RF acquisition and online,
+phase-continuous frequency updates. It is disabled by default; see the linked
+guide for commands, validation results and clipping limits.
 
 For slow carrier-offset correction, [fine LO control](pll-fine-tune.md) is another
 hardware option: approximately 100 Hz changes have been measured through direct
@@ -105,8 +113,9 @@ The repository's upstream measured NPU characterization in
 800 MHz RV32 cores without F/D/V instructions, sharing the DRAM bottleneck.
 Those measurements were not repeated on this XR1710G in this experiment.
 It is a programmable network processor, but no demonstrated IQ NCO engine
-is available through it. WM/WA already run the producer/packer; using unloaded
-radio DSP cores would require separate firmware and data-path bring-up.
+is available through it. WM/WA already run the producer/packer. A separate
+[radio DSP receive path](dsp-nco.md) implements NCO and packed output on
+the three MT7996 DSP cores.
 
 A router-side digital NCO corrects carrier offset without changing sample
 timing. Crystal trim remains a separate actuator for reference/sample-clock

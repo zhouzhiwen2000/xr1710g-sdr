@@ -45,6 +45,7 @@
 
 #define RADIO_PACKING_RAW	0u
 #define RADIO_PACKING_HALF	1u
+#define RADIO_PACKING_DSP	2u       /* fused NCO; arg1 phase step, arg2 stream run id */
 #define RADIO_STREAM_NO_WA	0x100u		/* STREAM result bit: the WA did not start */
 
 #define RADIO_CHAN_BW		0x000000ffu	/* SETUP arg 3 fields */

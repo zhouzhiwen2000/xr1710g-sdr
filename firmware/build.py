@@ -32,6 +32,9 @@ def build(out):
     for role, name, data, flags in [('patch', 'w1700k_rom_patch.bin', patch.build_own(), ())] + own.build():
         (out / name).write_bytes(data)
         manifest['containers'].append(_entry(role, name, data, flags))
+    dsp = own.dsp_container()
+    (out / 'w1700k_dsp_nco.bin').write_bytes(dsp)
+    manifest['dsp_nco'] = _entry('dsp', 'w1700k_dsp_nco.bin', dsp, ('--dsp',))
     (out / 'firmware.json').write_text(json.dumps(manifest, indent=2) + '\n')
     return manifest
 
@@ -45,7 +48,7 @@ def main(argv=None):
     for stale in out.glob('*.bin'):
         stale.unlink()
     manifest = build(out)
-    for entry in manifest['containers']:
+    for entry in manifest['containers'] + [manifest['dsp_nco']]:
         print(f"{entry['file']:<24} {entry['size']:>8}  {entry['sha256']}")
     return 0
 

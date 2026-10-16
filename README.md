@@ -30,6 +30,10 @@ payloads remain; the report includes transmit-host realtime setup and limits.
 An [experimental X310 160 MHz clock build](docs/x310-160mhz.md) subsequently
 passed 80 Msps OTA reception and raised the live video to 1080p at 30 Mb/s.
 
+An optional [DSP NCO receive path](docs/dsp-nco.md) supports phase-continuous
+frequency correction at 40/80 MS/s on the router. It is disabled by default
+and can use the existing UE frequency-control interface.
+
 The W1700K description and installation instructions below are retained from
 upstream; XR1710G users should follow the board-specific guide above.
 
